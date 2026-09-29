@@ -19,7 +19,13 @@ public final class MailUtilGmail {
             String body,
             boolean bodyIsHTML) throws Exception {
 
-        String apiKey = requireEnv("BREVO_API_KEY");
+    	String apiKey = requireEnv("BREVO_API_KEY");
+
+    	System.out.println(
+    	        "BREVO_API_KEY loaded: "
+    	        + (apiKey.length() > 0)
+    	        + ", length=" + apiKey.length()
+    	);
         String senderEmail = from;
 
         if (senderEmail == null || senderEmail.isBlank()) {
