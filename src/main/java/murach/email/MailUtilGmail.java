@@ -1,15 +1,11 @@
 package murach.email;
 
-import jakarta.mail.Address;
-import jakarta.mail.Authenticator;
-import jakarta.mail.Message;
-import jakarta.mail.PasswordAuthentication;
-import jakarta.mail.Session;
-import jakarta.mail.Transport;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
-
-import java.util.Properties;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 
 public final class MailUtilGmail {
 
@@ -23,55 +19,82 @@ public final class MailUtilGmail {
             String body,
             boolean bodyIsHTML) throws Exception {
 
-        String username = requireEnv("MAIL_USERNAME");
-        String appPassword = requireEnv("MAIL_APP_PASSWORD");
+        String apiKey = requireEnv("BREVO_API_KEY");
+        String senderEmail = from;
 
-        String actualFrom = (from == null || from.isBlank())
-                ? username
-                : from.trim();
-
-        Properties props = new Properties();
-        props.put("mail.smtp.host", "smtp.gmail.com");
-        props.put("mail.smtp.port", "587");
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
-        props.put("mail.smtp.starttls.required", "true");
-        props.put("mail.smtp.ssl.checkserveridentity", "true");
-
-        Session session = Session.getInstance(props, new Authenticator() {
-            @Override
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(username, appPassword);
-            }
-        });
-
-        MimeMessage message = new MimeMessage(session);
-        message.setSubject(subject, "UTF-8");
-
-        if (bodyIsHTML) {
-            message.setContent(body, "text/html; charset=UTF-8");
-        } else {
-            message.setText(body, "UTF-8");
+        if (senderEmail == null || senderEmail.isBlank()) {
+            senderEmail = System.getenv("MAIL_FROM");
         }
 
-        Address fromAddress = new InternetAddress(actualFrom);
-        Address toAddress = new InternetAddress(to);
-        message.setFrom(fromAddress);
-        message.setRecipient(Message.RecipientType.TO, toAddress);
+        if (senderEmail == null || senderEmail.isBlank()) {
+            senderEmail = System.getenv("MAIL_USERNAME");
+        }
 
+        if (senderEmail == null || senderEmail.isBlank()) {
+            throw new IllegalStateException(
+                    "Missing sender email. Set MAIL_FROM in Render.");
+        }
 
-        try (Transport transport = session.getTransport("smtp")) {
-            transport.connect(username, appPassword);
-            transport.sendMessage(message, message.getAllRecipients());
+        String content;
+
+        if (bodyIsHTML) {
+            content = "\"htmlContent\":\"" + escapeJson(body) + "\"";
+        } else {
+            content = "\"textContent\":\"" + escapeJson(body) + "\"";
+        }
+
+        String json = "{"
+                + "\"sender\":{\"email\":\"" + escapeJson(senderEmail) + "\"},"
+                + "\"to\":[{\"email\":\"" + escapeJson(to) + "\"}],"
+                + "\"subject\":\"" + escapeJson(subject) + "\","
+                + content
+                + "}";
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
+                .header("accept", "application/json")
+                .header("api-key", apiKey)
+                .header("content-type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        json, StandardCharsets.UTF_8))
+                .build();
+
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                request,
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IOException(
+                    "Brevo API error: HTTP "
+                    + response.statusCode()
+                    + " - "
+                    + response.body());
         }
     }
 
     private static String requireEnv(String name) {
         String value = System.getenv(name);
+
         if (value == null || value.isBlank()) {
             throw new IllegalStateException(
                     "Missing required environment variable: " + name);
         }
+
         return value.trim();
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t");
     }
 }
