@@ -47,14 +47,24 @@ public class EmailListServlet extends HttpServlet {
             request.setAttribute("email", email);
             request.setAttribute("successMessage", "Your welcome email was sent successfully.");
         } catch (MessagingException | IllegalStateException e) {
-            getServletContext().log("Unable to send email", e);
+            getServletContext().log(
+                    "EMAIL ERROR: " + e.getClass().getName()
+                    + " - " + e.getMessage(), e);
+
             request.setAttribute("errorMessage",
-                    "The form was submitted, but the email could not be sent. "
-                            + "Check the server log and your mail settings.");
+                    "Email error: " + e.getClass().getSimpleName()
+                    + " - " + e.getMessage());
+
         } catch (Exception e) {
-            getServletContext().log("Unexpected email error", e);
+            getServletContext().log(
+                    "UNEXPECTED EMAIL ERROR: "
+                    + e.getClass().getName()
+                    + " - " + e.getMessage(), e);
+
             request.setAttribute("errorMessage",
-                    "The form was submitted, but an unexpected email error occurred.");
+                    "Unexpected email error: "
+                    + e.getClass().getSimpleName()
+                    + " - " + e.getMessage());
         }
 
         request.getRequestDispatcher("/thanks.jsp").forward(request, response);
